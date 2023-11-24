@@ -1,0 +1,70 @@
+# New-RemoteMailbox Automate
+# Author: Shayne H
+# Date: 11/21/23
+# Version: 1.1
+#
+# Notes: Ensure that you have ExchangeOnlineManagement module installed
+
+$AdminCred = Get-Credential
+$DomainName = "@contoso.com"
+$UserList = Import-Csv .\CreateUsers.csv
+
+# Janky fix for 'Index was out of range' error
+# Import-Module -Name ExchangeOnlineManagement
+
+$ExchangeSession = New-PSSession -ConfigurationName Microsoft.Exchange -ConnectionUri http://myexchangeserver.com/PowerShell -Credential $AdminCred -Authentication Kerberos
+Import-PSSession $ExchangeSession -DisableNameChecking
+
+foreach ($User in $UserList) {
+    # Create variables from CSV
+    $FirstName = $User.FirstName
+    $LastName = $User.LastName
+    $UserName = $User.UserName
+    $CopyFrom = $User.CopyUser
+    $JobTitle = $User.JobTitle
+    $FullName = $FirstName + " " + $LastName
+    $Upn = $UserName + $DomainName
+    $Password = ("setme" | ConvertTo-SecureString -AsPlainText -Force)
+
+    # Create variables from existing AD user object
+    $UserOu = (Get-ADUser -Identity $CopyFrom | Select DistinguishedName) -replace '^(?:[^,]*,{1})' -replace '}',''
+    $Company = (Get-ADUser -Identity $CopyFrom -Properties Company | Select Company) -replace '(?s)^.*\=' -replace '}',''
+    $Department = (Get-ADUser -Identity $CopyFrom -Properties Department | Select Department) -replace '(?s)^.*\=' -replace '}',''
+    $EmployeeType = (Get-ADUser -Identity $CopyFrom -Properties employeeType | Select employeeType) -replace '(?s)^.*\=' -replace '}',''
+    $PhoneNumber = (Get-ADUser -Identity $CopyFrom -Properties telephoneNumber | Select telephoneNumber) -replace '(?s)^.*\=' -replace '}',''
+
+    # Create user object
+    if (Get-ADUser -Filter "SamAccountName -eq '$UserName'") {
+        Write-Host "The user account $UserName already exists." -Foreground Red
+    } else {
+        Write-Host "Creating user $FullName..." -Foreground Green
+        New-RemoteMailbox -Name $FullName -DisplayName $FullName -FirstName $FirstName -LastName $LastName -OnPremisesOrganizationalUnit $UserOu -UserPrincipalName $Upn -Password $Password -ResetPasswordOnNextLogon $true > $null
+        Start-Sleep -Seconds 10
+
+        Write-Host "Setting user attributes..." -Foreground Green
+        $Attributes = @{
+            Identity         = $UserName
+            Company          = $Company
+            Title            = $JobTitle
+            Description      = $JobTitle
+            Department       = $Department
+            Enabled          = $true
+        }
+        $Properties = @{
+            employeeType    = $EmployeeType
+            telephoneNumber = $PhoneNumber
+        }
+        Set-ADUser @Attributes
+        Start-Sleep -Seconds 5
+
+        Write-Host "Copying group memberships from $CopyFrom..." -Foreground Green
+        Get-ADUser -Identity $CopyFrom -Properties Memberof | Select-Object -ExpandProperty memberof | Add-ADGroupMember -Members $UserName
+        Start-Sleep -Seconds 10
+
+        if (Get-ADUser -Filter "SamAccountName -eq '$UserName'") {
+            Write-Host "User account $UserName has been successfully created." -Foreground Green
+        } else {
+            Write-Host "There was an error creating $UserName." -Foreground Red
+        }
+    }
+}
