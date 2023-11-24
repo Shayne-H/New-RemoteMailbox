@@ -9,9 +9,6 @@ $AdminCred = Get-Credential
 $DomainName = "@contoso.com"
 $UserList = Import-Csv .\CreateUsers.csv
 
-# Janky fix for 'Index was out of range' error
-# Import-Module -Name ExchangeOnlineManagement
-
 $ExchangeSession = New-PSSession -ConfigurationName Microsoft.Exchange -ConnectionUri http://myexchangeserver.com/PowerShell -Credential $AdminCred -Authentication Kerberos
 Import-PSSession $ExchangeSession -DisableNameChecking
 
