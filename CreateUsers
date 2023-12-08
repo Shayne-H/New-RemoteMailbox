@@ -1,7 +1,7 @@
 # New-RemoteMailbox Automate
 # Author: Shayne H
-# Date: 11/21/23
-# Version: 1.1
+# Date: 12/08/23
+# Version: 1.2
 #
 # Notes: Ensure that you have ExchangeOnlineManagement module installed
 
@@ -48,10 +48,17 @@ foreach ($User in $UserList) {
             Enabled          = $true
         }
         $Properties = @{
-            employeeType    = $EmployeeType
-            telephoneNumber = $PhoneNumber
+            employeeType     = $EmployeeType
+            telephoneNumber  = $PhoneNumber
         }
-        Set-ADUser @Attributes
+        $NullValues = $Attributes.keys | Where-Object {
+            !$Attributes[$_]
+        }
+        $NullValues | Foreach-Object {
+            $Attributes.remove($_)
+        }
+
+        Set-ADUser @Attributes -Replace $Properties
         Start-Sleep -Seconds 5
 
         Write-Host "Copying group memberships from $CopyFrom..." -Foreground Green
@@ -60,8 +67,10 @@ foreach ($User in $UserList) {
 
         if (Get-ADUser -Filter "SamAccountName -eq '$UserName'") {
             Write-Host "User account $UserName has been successfully created." -Foreground Green
+            Write-Host "=====================================================" -Foreground Blue
         } else {
             Write-Host "There was an error creating $UserName." -Foreground Red
+            Write-Host "=====================================================" -Foreground Red
         }
     }
 }
